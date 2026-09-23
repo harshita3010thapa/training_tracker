@@ -220,12 +220,6 @@
   table.rep-grid .avg-cell{width:48px; color:var(--ink-2); font-size:12.5px;}
 
   [hidden]{display:none !important;}
-  header.top{display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;}
-  .user-bar{display:flex; align-items:center; gap:10px; font-size:12.5px; color:var(--ink-2); padding-top:4px;}
-  .link-btn{background:none; border:none; padding:0; font-family:inherit; font-size:12.5px; font-weight:600; color:var(--accent); cursor:pointer;}
-  .signin-card{max-width:420px; margin:24px auto 0; text-align:center; padding:28px 24px;}
-  .signin-card #googleButton{display:flex; justify-content:center; min-height:44px;}
-  .signin-error{margin-top:14px; font-size:12.5px; color:var(--critical); background:var(--critical-wash); border-radius:var(--radius-sm); padding:10px 12px; text-align:left;}
   .btn:disabled{opacity:.5; cursor:default;}
 
   footer.foot{text-align:center; color:var(--muted); font-size:11.5px; padding-top:8px;}
@@ -234,28 +228,11 @@
 <body>
 <div class="shell">
   <header class="top">
-    <div>
     <div class="brand-mark">
       <h1>Training Batch Tracker</h1>
     </div>
     <p class="subtitle">Add rep records, then track FRC, OJT and checkpoint progress in the report</p>
-    </div>
-    <div class="user-bar" id="userBar" hidden>
-      <span id="userEmail"></span>
-      <button type="button" class="link-btn" id="signOutBtn">Sign out</button>
-    </div>
   </header>
-
-  <section id="signInView" hidden>
-    <div class="card signin-card">
-      <div class="card-title">Sign in to continue</div>
-      <div class="card-caption" id="signInCaption">Use your Accredian Google account.</div>
-      <div id="googleButton"></div>
-      <div class="signin-error" id="signInError" hidden></div>
-    </div>
-  </section>
-
-  <div id="appView" hidden>
 
   <div class="tabs" role="tablist">
     <button type="button" class="tab-btn" id="tabAddBtn" role="tab" aria-selected="true">Add entry</button>
@@ -397,9 +374,7 @@
     </div>
   </section>
 
-  </div>
-
-  <footer class="foot">Training Batch Tracker &middot; entries are shared with everyone at Accredian who signs in</footer>
+  <footer class="foot">Training Batch Tracker &middot; entries are shared with everyone who opens this page</footer>
 </div>
 
 <div class="overlay" id="detailOverlay" hidden>
@@ -502,60 +477,9 @@ async function api(path, opts){
   });
   let data = {};
   try{ data = await res.json(); }catch(e){}
-  if(res.status === 401 && path !== '/api/login'){ showSignIn(data.error || 'Your session ended. Please sign in again.'); }
   if(!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
   return data;
 }
-
-/* ============================= sign-in ============================= */
-let session = null;
-let gisReady = false;
-const signInView = document.getElementById('signInView');
-const appView = document.getElementById('appView');
-function showSignIn(message){
-  stopPolling();
-  appView.hidden = true;
-  signInView.hidden = false;
-  document.getElementById('userBar').hidden = true;
-  const err = document.getElementById('signInError');
-  err.textContent = message || '';
-  err.hidden = !message;
-  renderGoogleButton();
-}
-function showApp(email){
-  signInView.hidden = true;
-  appView.hidden = false;
-  document.getElementById('userEmail').textContent = email;
-  document.getElementById('userBar').hidden = false;
-  loadEntries(false);
-  startPolling();
-}
-window.onGoogleLibraryLoad = function(){ gisReady = true; renderGoogleButton(); };
-function renderGoogleButton(){
-  if(!gisReady || !session || !session.googleClientId || signInView.hidden) return;
-  google.accounts.id.initialize({ client_id: session.googleClientId, callback: onGoogleCredential, hd: session.allowedDomain, ux_mode: 'popup' });
-  const holder = document.getElementById('googleButton');
-  holder.innerHTML = '';
-  google.accounts.id.renderButton(holder, { theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill' });
-}
-async function onGoogleCredential(resp){
-  const err = document.getElementById('signInError');
-  err.hidden = true;
-  try{
-    const data = await api('/api/login', { method:'POST', body:{ credential: resp.credential } });
-    showApp(data.email);
-  }catch(e){
-    err.textContent = e.message;
-    err.hidden = false;
-  }
-}
-document.getElementById('signOutBtn').addEventListener('click', async ()=>{
-  try{ await api('/api/logout', { method:'POST', body:{} }); }catch(e){}
-  if(window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect();
-  allDocs = [];
-  closeDetail();
-  showSignIn('');
-});
 
 /* ============================= entries from the server ============================= */
 let allDocs = [];
@@ -968,22 +892,10 @@ function syncDownloadButtons(){
 }
 
 /* ============================= start ============================= */
-async function init(){
-  renderRepRows();
-  showTab(location.hash === '#report' ? 'report' : 'add');
-  try{
-    session = await api('/api/session');
-  }catch(e){
-    session = null;
-    showSignIn("Couldn't reach the server. Check your connection and reload the page.");
-    return;
-  }
-  document.getElementById('signInCaption').textContent = `Use your Accredian Google account (@${session.allowedDomain}).`;
-  if(session.email) showApp(session.email);
-  else showSignIn(session.googleClientId ? '' : "Sign-in isn't set up yet: add GOOGLE_CLIENT_ID in Vercel's environment variables and redeploy.");
-}
-init();
+renderRepRows();
+showTab(location.hash === '#report' ? 'report' : 'add');
+loadEntries(false);
+startPolling();
 </script>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 </body>
 </html>

@@ -3,9 +3,6 @@
 import crypto from 'node:crypto';
 import { neon } from '@neondatabase/serverless';
 
-export const ALLOWED_DOMAIN = (process.env.ALLOWED_DOMAIN || 'accredian.com').trim().toLowerCase();
-const SESSION_COOKIE = 'tbt_session';
-const SESSION_SECONDS = 7 * 24 * 60 * 60;
 const MAX_REPS_PER_BATCH = 50;
 const FRC_STATUSES = ['Cleared', 'Not Cleared', 'Pending'];
 const OJT_STATUSES = ['Cleared', 'Exit', 'OJT Extended'];
@@ -55,120 +52,10 @@ export function requireMethod(req, res, methods) {
     res.setHeader('Allow', methods.join(', '));
     throw new HttpError(405, 'Method not allowed.');
   }
-  // Writes must come from this app's own page (a custom header can't be sent cross-site without CORS).
+  // Writes must come from this app's own page (other sites can't send this header without CORS).
   if (req.method !== 'GET' && req.headers['x-requested-with'] !== 'tbt') {
     throw new HttpError(403, 'Request blocked.');
   }
-}
-
-/* ============================= sessions ============================= */
-
-const b64url = (buf) => Buffer.from(buf).toString('base64url');
-
-function sessionSecret() {
-  const secret = process.env.SESSION_SECRET || '';
-  if (secret.length < 16) throw new HttpError(500, 'SESSION_SECRET is not set in Vercel (use a long random value).');
-  return secret;
-}
-
-function signSession(email) {
-  const payload = b64url(JSON.stringify({ email, exp: Math.floor(Date.now() / 1000) + SESSION_SECONDS }));
-  const sig = b64url(crypto.createHmac('sha256', sessionSecret()).update(payload).digest());
-  return payload + '.' + sig;
-}
-
-function readSession(token) {
-  const [payload, sig] = String(token || '').split('.');
-  if (!payload || !sig) return null;
-  const expected = crypto.createHmac('sha256', sessionSecret()).update(payload).digest();
-  const given = Buffer.from(sig, 'base64url');
-  if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
-  try {
-    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    if (!data.exp || data.exp < Math.floor(Date.now() / 1000)) return null;
-    if (!String(data.email || '').endsWith('@' + ALLOWED_DOMAIN)) return null;
-    return data.email;
-  } catch {
-    return null;
-  }
-}
-
-function cookies(req) {
-  const out = {};
-  String(req.headers.cookie || '').split(';').forEach((part) => {
-    const i = part.indexOf('=');
-    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
-  });
-  return out;
-}
-
-function cookieAttrs(maxAge) {
-  const secure = process.env.VERCEL ? '; Secure' : '';
-  return `; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
-}
-
-export function setSessionCookie(res, email) {
-  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${signSession(email)}${cookieAttrs(SESSION_SECONDS)}`);
-}
-
-export function clearSessionCookie(res) {
-  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${cookieAttrs(0)}`);
-}
-
-export function currentUser(req) {
-  return readSession(cookies(req)[SESSION_COOKIE]);
-}
-
-export function requireUser(req) {
-  const email = currentUser(req);
-  if (!email) throw new HttpError(401, `Sign in with your @${ALLOWED_DOMAIN} Google account.`);
-  return email;
-}
-
-/* ============================= Google sign-in check ============================= */
-
-let jwksCache = { keys: null, at: 0 };
-async function googleKeys(force) {
-  if (!force && jwksCache.keys && Date.now() - jwksCache.at < 60 * 60 * 1000) return jwksCache.keys;
-  const r = await fetch(process.env.GOOGLE_JWKS_URL || 'https://www.googleapis.com/oauth2/v3/certs');
-  if (!r.ok) throw new HttpError(502, "Couldn't reach Google to check your sign-in. Please try again.");
-  const body = await r.json();
-  jwksCache = { keys: body.keys || [], at: Date.now() };
-  return jwksCache.keys;
-}
-
-export async function verifyGoogleIdToken(token) {
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  if (!clientId) throw new HttpError(500, 'GOOGLE_CLIENT_ID is not set in Vercel.');
-  const fail = () => new HttpError(401, 'Google sign-in could not be verified. Please try again.');
-  const parts = String(token || '').split('.');
-  if (parts.length !== 3) throw fail();
-  let header, payload;
-  try {
-    header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
-    payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-  } catch { throw fail(); }
-  if (header.alg !== 'RS256' || !header.kid) throw fail();
-
-  let jwk = (await googleKeys(false)).find((k) => k.kid === header.kid);
-  if (!jwk) jwk = (await googleKeys(true)).find((k) => k.kid === header.kid);
-  if (!jwk) throw fail();
-  const valid = crypto.verify('RSA-SHA256', Buffer.from(parts[0] + '.' + parts[1]),
-    crypto.createPublicKey({ key: jwk, format: 'jwk' }), Buffer.from(parts[2], 'base64url'));
-  if (!valid) throw fail();
-
-  const now = Math.floor(Date.now() / 1000);
-  if (!['accounts.google.com', 'https://accounts.google.com'].includes(payload.iss)) throw fail();
-  if (payload.aud !== clientId) throw fail();
-  if (!(payload.exp > now - 60)) throw new HttpError(401, 'Your Google sign-in expired. Please sign in again.');
-  if (payload.email_verified !== true && payload.email_verified !== 'true') throw fail();
-
-  const email = String(payload.email || '').toLowerCase();
-  const hd = String(payload.hd || '').toLowerCase();
-  if (hd !== ALLOWED_DOMAIN || !email.endsWith('@' + ALLOWED_DOMAIN)) {
-    throw new HttpError(403, `Only @${ALLOWED_DOMAIN} Google accounts can use this tracker. You signed in as ${email || 'another account'}.`);
-  }
-  return email;
 }
 
 /* ============================= database ============================= */
@@ -231,7 +118,7 @@ export async function listEntries() {
   return rows.map((r) => ({ id: r.id, data: typeof r.data === 'string' ? JSON.parse(r.data) : r.data }));
 }
 
-export async function insertBatch(body, email) {
+export async function insertBatch(body) {
   const shared = (body && body.shared) || {};
   const reps = Array.isArray(body && body.reps) ? body.reps : [];
   if (reps.length < 1) throw new HttpError(400, 'Add at least one rep.');
@@ -274,7 +161,7 @@ export async function insertBatch(body, email) {
         cp2: notCleared ? null : base.cp2,
         cp4: notCleared ? null : base.cp4,
         cp6: notCleared ? null : base.cp6,
-        createdAt, updatedAt: createdAt, createdBy: email,
+        createdAt, updatedAt: createdAt,
       },
     };
   });
@@ -285,7 +172,7 @@ export async function insertBatch(body, email) {
   return rows.map((r) => ({ id: r.id, data: r.data }));
 }
 
-export async function updateProgress(id, body, email) {
+export async function updateProgress(id, body) {
   const input = (body && body.checkpointStats) || {};
   const checkpointStats = {};
   CHECKPOINTS.forEach((cp) => {
@@ -298,7 +185,7 @@ export async function updateProgress(id, body, email) {
     checkpointStats[cp] = { registered, recovered };
   });
   const ojtStatus = OJT_STATUSES.includes(body && body.ojtStatus) ? body.ojtStatus : null;
-  const patch = { checkpointStats, ojtStatus, updatedAt: new Date().toISOString(), updatedBy: email };
+  const patch = { checkpointStats, ojtStatus, updatedAt: new Date().toISOString() };
 
   const rows = await sql()`UPDATE entries
     SET data = data || ${JSON.stringify(patch)}::jsonb, updated_at = now()
