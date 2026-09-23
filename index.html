@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training Batch Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --page:#f3f1ec; --surface:#ffffff; --surface-2:#faf8f3; --surface-3:#f0ede5;
+    --ink:#1b1e24; --ink-2:#565b66; --muted:#8b8f99;
+    --hairline:#e2ddd2; --hairline-strong:#d3cdbf;
+    --accent:#0e6f6f; --accent-strong:#0a5757; --accent-wash:#e3f0ef; --accent-ink:#ffffff;
+    --good:#0ca30c; --good-wash:#e6f6e6; --warning:#c98300; --warning-wash:#fdf1dc; --critical:#d03b3b; --critical-wash:#fbe8e7;
+    --shadow-card:0 1px 2px rgba(27,30,36,.06), 0 1px 1px rgba(27,30,36,.04);
+    --shadow-modal:0 20px 48px rgba(20,20,15,.28);
+    --radius:12px; --radius-sm:7px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --page:#111315; --surface:#1a1c1f; --surface-2:#202226; --surface-3:#26282c;
+      --ink:#f2f1ec; --ink-2:#c3c2b7; --muted:#8f8d86;
+      --hairline:#2c2c2a; --hairline-strong:#393936;
+      --accent:#3bbcb1; --accent-strong:#57cdc2; --accent-wash:rgba(59,188,177,.16); --accent-ink:#06201d;
+      --good:#39c239; --good-wash:rgba(57,194,57,.14); --warning:#fab219; --warning-wash:rgba(250,178,25,.14); --critical:#e66767; --critical-wash:rgba(230,103,103,.14);
+      --shadow-card:0 1px 3px rgba(0,0,0,.5);
+      --shadow-modal:0 20px 48px rgba(0,0,0,.6);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --page:#111315; --surface:#1a1c1f; --surface-2:#202226; --surface-3:#26282c;
+    --ink:#f2f1ec; --ink-2:#c3c2b7; --muted:#8f8d86;
+    --hairline:#2c2c2a; --hairline-strong:#393936;
+    --accent:#3bbcb1; --accent-strong:#57cdc2; --accent-wash:rgba(59,188,177,.16); --accent-ink:#06201d;
+    --good:#39c239; --good-wash:rgba(57,194,57,.14); --warning:#fab219; --warning-wash:rgba(250,178,25,.14); --critical:#e66767; --critical-wash:rgba(230,103,103,.14);
+    --shadow-card:0 1px 3px rgba(0,0,0,.5);
+    --shadow-modal:0 20px 48px rgba(0,0,0,.6);
+    color-scheme: dark;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--page); color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+    font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased;
+    padding-inline:16px;
+  }
+  @media (prefers-reduced-motion: reduce){ *{animation:none !important; transition:none !important;} }
+  :focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:4px;}
+  .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace; font-variant-numeric:tabular-nums;}
+
+  .shell{max-width:880px; margin:0 auto; padding-block:28px 56px;}
+  header.top{margin-bottom:18px;}
+  .brand-mark{display:flex; align-items:center; gap:12px; margin-bottom:4px;}
+  h1{font-size:21px; font-weight:600; margin:0; letter-spacing:-0.01em;}
+  .subtitle{color:var(--ink-2); font-size:13px; margin:4px 0 0;}
+
+  .tabs{display:flex; gap:4px; background:var(--surface-3); border-radius:99px; padding:4px; width:fit-content; margin-bottom:20px;}
+  .tab-btn{
+    font-family:inherit; font-size:12.5px; font-weight:600; color:var(--ink-2);
+    background:transparent; border:none; border-radius:99px; padding:8px 16px; cursor:pointer;
+  }
+  .tab-btn[aria-selected="true"]{background:var(--surface); color:var(--ink); box-shadow:var(--shadow-card);}
+
+  .banner{
+    font-size:12.5px; padding:10px 14px; border-radius:var(--radius-sm); margin-bottom:18px;
+    display:flex; align-items:center; gap:8px; border:1px solid transparent;
+  }
+  .banner .dot{width:7px; height:7px; border-radius:99px; flex:none;}
+  .banner.info{background:var(--accent-wash); color:var(--ink-2); border-color:var(--hairline);}
+  .banner.info .dot{background:var(--accent);}
+  .banner.success{background:var(--good-wash); color:var(--ink-2); border-color:var(--hairline);}
+  .banner.success .dot{background:var(--good);}
+  .banner.error{background:var(--critical-wash); color:var(--ink-2); border-color:var(--hairline-strong);}
+  .banner.error .dot{background:var(--critical);}
+
+  .card{
+    background:var(--surface); border:1px solid var(--hairline); border-radius:var(--radius);
+    box-shadow:var(--shadow-card); padding:20px 20px 18px; margin-bottom:20px;
+  }
+  .card-title{font-size:15px; font-weight:600; margin-bottom:2px;}
+  .card-caption{font-size:12.5px; color:var(--muted); margin-bottom:16px;}
+
+  .form-section{margin-bottom:20px;}
+  .form-section:last-of-type{margin-bottom:0;}
+  .form-section-title{
+    font-size:10.8px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);
+    margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid var(--hairline);
+  }
+  .form-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px 14px;}
+  @media (max-width:620px){ .form-grid{grid-template-columns:1fr;} }
+  .field{display:flex; flex-direction:column; gap:5px;}
+  .field label{font-size:12px; font-weight:600; color:var(--ink-2);}
+  .field label .req{color:var(--critical); margin-left:2px;}
+  .field input, .field select{
+    font-family:inherit; font-size:13.5px; color:var(--ink);
+    background:var(--surface); border:1px solid var(--hairline-strong); border-radius:var(--radius-sm);
+    padding:9px 11px; height:38px; width:100%;
+  }
+  .field input:focus, .field select:focus{border-color:var(--accent);}
+  .field input::placeholder{color:var(--muted);}
+  .field input:invalid:not(:placeholder-shown){border-color:var(--critical);}
+  .field.readonly input{background:var(--surface-2); color:var(--ink-2);}
+
+  .form-actions{
+    display:flex; align-items:center; gap:10px; margin-top:20px; padding-top:16px; border-top:1px solid var(--hairline);
+    flex-wrap:wrap;
+  }
+  .btn{
+    font-family:inherit; font-size:13px; font-weight:600; border-radius:var(--radius-sm);
+    padding:10px 16px; height:38px; cursor:pointer; border:1px solid transparent; white-space:nowrap;
+  }
+  .btn-primary{background:var(--accent); border-color:var(--accent); color:var(--accent-ink);}
+  .btn-primary:hover{background:var(--accent-strong); border-color:var(--accent-strong);}
+  .btn-primary:disabled{opacity:.5; cursor:default;}
+  .btn-ghost{background:var(--surface); border-color:var(--hairline-strong); color:var(--ink-2);}
+  .btn-ghost:hover{border-color:var(--accent); color:var(--accent);}
+  .btn-danger-ghost{background:var(--surface); border-color:var(--hairline-strong); color:var(--critical);}
+  .btn-danger-ghost:hover{background:var(--critical-wash); border-color:var(--critical);}
+  .btn-small{padding:6px 11px; height:30px; font-size:12px;}
+
+  .toolbar{display:flex; align-items:flex-end; gap:10px; margin-bottom:14px; flex-wrap:wrap;}
+  .search-field{flex:1 1 200px; min-width:180px; max-width:280px;}
+  .search-field input, .filter-field select{
+    font-family:inherit; font-size:13px; color:var(--ink); background:var(--surface);
+    border:1px solid var(--hairline-strong); border-radius:var(--radius-sm); padding:8px 11px; height:36px; width:100%;
+  }
+  .filter-field{display:flex; flex-direction:column; gap:4px; flex:0 1 160px; min-width:140px;}
+  .filter-field label{font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);}
+  .toolbar-end{margin-left:auto; display:flex; align-items:center; gap:10px; height:36px;}
+  .clear-filters{background:none; border:none; padding:0; font-family:inherit; font-size:12px; font-weight:600; color:var(--accent); cursor:pointer;}
+  .entry-count{font-size:12px; color:var(--muted); white-space:nowrap;}
+  .card-head-row{display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+  .download-group{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;}
+  .download-group .btn:disabled{opacity:.5; cursor:default;}
+
+  .table-scroll{overflow-x:auto; border-radius:var(--radius-sm);}
+  table{border-collapse:collapse; width:100%; font-size:12.8px; min-width:640px;}
+  thead th{
+    position:sticky; top:0; background:var(--surface); text-align:left;
+    font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--muted);
+    padding:9px 10px; border-bottom:1px solid var(--hairline-strong); white-space:nowrap;
+  }
+  thead th.num, td.num{text-align:right;}
+  tbody td{padding:9px 10px; border-bottom:1px solid var(--hairline); vertical-align:middle;}
+  tbody tr.entry-row{cursor:pointer;}
+  tbody tr.entry-row:hover td{background:var(--surface-2);}
+  .entry-name{font-weight:500;}
+  .entry-email{color:var(--muted); font-size:11.5px;}
+  .pill{
+    display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:500; color:var(--ink-2);
+    background:var(--surface-2); border:1px solid var(--hairline); border-radius:99px; padding:3px 9px 3px 7px; white-space:nowrap;
+  }
+  .pill .dot{width:7px; height:7px; border-radius:99px; flex:none;}
+  .dot.good{background:var(--good);} .dot.warning{background:var(--warning);} .dot.critical{background:var(--critical);} .dot.neutral{background:var(--muted);}
+  .empty-note{color:var(--muted); font-size:12.5px; padding:26px 6px; text-align:center;}
+
+  /* ---------- detail modal ---------- */
+  .overlay{
+    position:fixed; inset:0; background:rgba(17,19,21,.44); z-index:100;
+    display:flex; align-items:flex-start; justify-content:center; padding:32px 16px;
+    overflow-y:auto;
+  }
+  .modal{
+    background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow-modal);
+    width:100%; max-width:560px; padding:22px 22px 18px; position:relative;
+  }
+  .modal-close{
+    position:absolute; top:16px; right:16px; width:30px; height:30px; border-radius:99px;
+    background:var(--surface-2); border:1px solid var(--hairline); color:var(--ink-2);
+    font-size:16px; line-height:1; cursor:pointer;
+  }
+  .modal-close:hover{border-color:var(--accent); color:var(--accent);}
+  .modal-header{padding-right:36px; margin-bottom:16px;}
+  .modal-name{font-size:17px; font-weight:600;}
+  .modal-email{font-size:12.5px; color:var(--muted); margin-top:2px;}
+  .modal-badges{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
+  .detail-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(130px,1fr)); gap:12px 16px; margin-bottom:18px;}
+  .detail-item-label{font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:3px;}
+  .detail-item-value{font-size:12.5px; color:var(--ink-2);}
+  .checkpoint-section-title{
+    font-size:10.8px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);
+    margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid var(--hairline);
+  }
+  .checkpoint-blocks{display:flex; flex-direction:column; gap:10px;}
+  .checkpoint-block{background:var(--surface-2); border:1px solid var(--hairline); border-radius:var(--radius-sm); padding:12px 14px;}
+  .checkpoint-block-head{display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:10px;}
+  .checkpoint-block-title{font-size:12.5px; font-weight:600;}
+  .checkpoint-block-date{font-size:11.5px; color:var(--muted);}
+  .checkpoint-inputs{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .checkpoint-inputs .field label{font-size:11px;}
+  .checkpoint-inputs .field input{height:34px; padding:6px 10px;}
+  .modal-footer{display:flex; align-items:center; gap:10px; margin-top:18px; padding-top:16px; border-top:1px solid var(--hairline); flex-wrap:wrap;}
+  .modal-save-status{font-size:11.5px; color:var(--muted);}
+  .modal-note{font-size:12.5px; color:var(--ink-2); background:var(--surface-2); border:1px solid var(--hairline); border-radius:var(--radius-sm); padding:10px 12px;}
+
+  .section-hint{font-size:11.5px; color:var(--muted); margin:-4px 0 10px;}
+  .reps-empty{font-size:12.5px; color:var(--muted); background:var(--surface-2); border:1px dashed var(--hairline-strong); border-radius:var(--radius-sm); padding:14px; text-align:center;}
+  .save-summary{font-size:12px; color:var(--muted);}
+  table.rep-grid{min-width:760px;}
+  table.rep-grid thead th{font-size:10.5px; padding:6px 6px 8px;}
+  table.rep-grid thead th .req{color:var(--critical); margin-left:2px;}
+  table.rep-grid tbody td{padding:5px 6px; border-bottom:1px solid var(--hairline);}
+  table.rep-grid tbody tr:hover td{background:transparent;}
+  table.rep-grid .col-n{width:28px; color:var(--muted); text-align:center; font-size:12px;}
+  table.rep-grid input, table.rep-grid select{
+    font-family:inherit; font-size:13px; color:var(--ink); background:var(--surface);
+    border:1px solid var(--hairline-strong); border-radius:var(--radius-sm); padding:6px 8px; height:34px; width:100%;
+  }
+  table.rep-grid input:focus, table.rep-grid select:focus{border-color:var(--accent);}
+  table.rep-grid input::placeholder{color:var(--muted);}
+  table.rep-grid input:invalid:not(:placeholder-shown){border-color:var(--critical);}
+  table.rep-grid .in-name{min-width:130px;}
+  table.rep-grid .in-email{min-width:170px;}
+  table.rep-grid .in-status{min-width:112px;}
+  table.rep-grid .in-score{width:56px; text-align:right; padding:6px 6px;}
+  table.rep-grid .avg-cell{width:48px; color:var(--ink-2); font-size:12.5px;}
+
+  [hidden]{display:none !important;}
+  header.top{display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+  .user-bar{display:flex; align-items:center; gap:10px; font-size:12.5px; color:var(--ink-2); padding-top:4px;}
+  .link-btn{background:none; border:none; padding:0; font-family:inherit; font-size:12.5px; font-weight:600; color:var(--accent); cursor:pointer;}
+  .signin-card{max-width:420px; margin:24px auto 0; text-align:center; padding:28px 24px;}
+  .signin-card #googleButton{display:flex; justify-content:center; min-height:44px;}
+  .signin-error{margin-top:14px; font-size:12.5px; color:var(--critical); background:var(--critical-wash); border-radius:var(--radius-sm); padding:10px 12px; text-align:left;}
+  .btn:disabled{opacity:.5; cursor:default;}
+
+  footer.foot{text-align:center; color:var(--muted); font-size:11.5px; padding-top:8px;}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="top">
+    <div>
+    <div class="brand-mark">
+      <h1>Training Batch Tracker</h1>
+    </div>
+    <p class="subtitle">Add rep records, then track FRC, OJT and checkpoint progress in the report</p>
+    </div>
+    <div class="user-bar" id="userBar" hidden>
+      <span id="userEmail"></span>
+      <button type="button" class="link-btn" id="signOutBtn">Sign out</button>
+    </div>
+  </header>
+
+  <section id="signInView" hidden>
+    <div class="card signin-card">
+      <div class="card-title">Sign in to continue</div>
+      <div class="card-caption" id="signInCaption">Use your Accredian Google account.</div>
+      <div id="googleButton"></div>
+      <div class="signin-error" id="signInError" hidden></div>
+    </div>
+  </section>
+
+  <div id="appView" hidden>
+
+  <div class="tabs" role="tablist">
+    <button type="button" class="tab-btn" id="tabAddBtn" role="tab" aria-selected="true">Add entry</button>
+    <button type="button" class="tab-btn" id="tabReportBtn" role="tab" aria-selected="false">Report</button>
+  </div>
+
+  <div id="dbBanner" class="banner error" hidden><span class="dot"></span><span id="dbBannerText">Couldn't load entries.</span></div>
+  <div id="statusBanner" class="banner info" hidden><span class="dot"></span><span id="statusText"></span></div>
+
+  <section id="viewAdd">
+    <div class="card">
+      <div class="card-title">Add a batch</div>
+      <div class="card-caption">Batch details are filled once and applied to every rep. Anything left blank can be filled in later from the report.</div>
+      <form id="entryForm" novalidate>
+        <div class="form-section">
+          <div class="form-section-title">Batch details</div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="traineeCount">Number of trainees joined<span class="req">*</span></label>
+              <input type="number" id="traineeCount" min="1" max="50" step="1" placeholder="e.g. 8" required>
+            </div>
+            <div class="field">
+              <label for="joiningDate">Joining date</label>
+              <input type="date" id="joiningDate">
+            </div>
+            <div class="field">
+              <label for="vertical">Vertical</label>
+              <input type="text" id="vertical" placeholder="Program name">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="form-section-title">Reps &amp; FRC performance</div>
+          <div class="reps-empty" id="repsEmpty">Enter the number of trainees joined to get a row for each rep.</div>
+          <div class="table-scroll" id="repsTableWrap" hidden>
+            <table class="rep-grid">
+              <thead>
+                <tr>
+                  <th class="col-n">#</th>
+                  <th>Rep name<span class="req">*</span></th>
+                  <th>Email id of rep<span class="req">*</span></th>
+                  <th>FRC status</th>
+                  <th class="num">FRC 1</th>
+                  <th class="num">FRC 2</th>
+                  <th class="num">FRC 3</th>
+                  <th class="num">FRC 4</th>
+                  <th class="num">Avg</th>
+                </tr>
+              </thead>
+              <tbody id="repRows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="form-section" id="ojtSection">
+          <div class="form-section-title">OJT timeline</div>
+          <div class="section-hint">Applied to every rep except those whose FRC status is Not Cleared.</div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="ojtStart">OJT start date</label>
+              <input type="date" id="ojtStart">
+            </div>
+            <div class="field">
+              <label for="cp2">2nd week checkpoint</label>
+              <input type="date" id="cp2">
+            </div>
+            <div class="field">
+              <label for="cp4">4th week checkpoint</label>
+              <input type="date" id="cp4">
+            </div>
+            <div class="field">
+              <label for="cp6">6th week checkpoint</label>
+              <input type="date" id="cp6">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="submitBtn">Save entries</button>
+          <span class="save-summary" id="saveSummary"></span>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section id="viewReport" hidden>
+    <div class="card">
+      <div class="card-head-row">
+        <div>
+          <div class="card-title">Batch report</div>
+          <div class="card-caption">Click an entry to see full details and log Registered / Recovered counts.</div>
+        </div>
+        <div class="download-group" id="downloadGroup">
+          <button type="button" class="btn btn-ghost btn-small" id="refreshBtn">Refresh</button>
+          <button type="button" class="btn btn-ghost btn-small" id="dlCsv" title="Downloads every saved entry, not just the filtered list">Download CSV File</button>
+        </div>
+      </div>
+      <div class="toolbar">
+        <div class="search-field"><input type="text" id="entrySearch" placeholder="Search rep, month or joining date…" aria-label="Search entries"></div>
+        <div class="filter-field">
+          <label for="filterFrc">FRC status</label>
+          <select id="filterFrc">
+            <option value="">All</option>
+            <option value="Cleared">Cleared</option>
+            <option value="Not Cleared">Not Cleared</option>
+            <option value="Pending">Pending</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="filterOjt">OJT status</label>
+          <select id="filterOjt">
+            <option value="">All</option>
+            <option value="Cleared">Cleared</option>
+            <option value="Exit">Exit</option>
+            <option value="OJT Extended">OJT Extended</option>
+          </select>
+        </div>
+        <div class="toolbar-end">
+          <button type="button" class="clear-filters" id="clearFilters" hidden>Clear filters</button>
+          <div class="entry-count" id="entryCount">—</div>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table id="entryTable">
+          <thead>
+            <tr>
+              <th>Joining date</th>
+              <th>Rep</th>
+              <th>Vertical</th>
+              <th>FRC status</th>
+              <th class="num">Registered/Recovered</th>
+              <th>OJT status</th>
+            </tr>
+          </thead>
+          <tbody id="entryTbody"><tr><td colspan="6"><div class="empty-note">Loading entries…</div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  </div>
+
+  <footer class="foot">Training Batch Tracker &middot; entries are shared with everyone at Accredian who signs in</footer>
+</div>
+
+<div class="overlay" id="detailOverlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalName">
+    <button type="button" class="modal-close" id="modalClose" aria-label="Close">&times;</button>
+    <div class="modal-header">
+      <div class="modal-name" id="modalName"></div>
+      <div class="modal-email" id="modalEmail"></div>
+      <div class="modal-badges" id="modalBadges"></div>
+    </div>
+    <div class="detail-grid" id="modalSummary"></div>
+    <div class="modal-note" id="modalNoOjtNote" hidden>FRC not cleared — this rep doesn't move on to OJT, so there's no checkpoint data to log.</div>
+    <div id="modalOjtArea">
+    <div class="checkpoint-section-title">Checkpoints — Registered &amp; Recovered</div>
+    <div class="field" id="ojtStatusField" style="max-width:240px; margin-bottom:14px;">
+      <label for="modalOjtStatus">Final status after OJT</label>
+      <select id="modalOjtStatus">
+        <option value="">Select status</option>
+        <option value="Cleared">Cleared</option>
+        <option value="Exit">Exit</option>
+        <option value="OJT Extended">OJT Extended</option>
+      </select>
+    </div>
+    <div class="checkpoint-blocks" id="modalCheckpoints"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-primary btn-small" id="modalSaveBtn">Save updates</button>
+      <span class="modal-save-status" id="modalSaveStatus"></span>
+      <button type="button" class="btn btn-danger-ghost btn-small" id="modalDeleteBtn" style="margin-left:auto;">Delete entry</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================= helpers ============================= */
+const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function monthNameOf(iso){
+  if(!iso) return '';
+  const m = Number(iso.split('-')[1]);
+  return MONTHS_FULL[m-1] || '';
+}
+function fmtDate(iso){
+  if(!iso) return '—';
+  const [y,m,d] = iso.split('-').map(Number);
+  if(!y||!m||!d) return '—';
+  return `${d} ${MONTHS_SHORT[m-1]} ${y}`;
+}
+function esc(s){
+  return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function showStatus(kind, text){
+  const el = document.getElementById('statusBanner');
+  el.className = 'banner ' + kind;
+  document.getElementById('statusText').textContent = text;
+  el.hidden = false;
+  if(kind !== 'error'){
+    clearTimeout(showStatus._t);
+    showStatus._t = setTimeout(()=>{ el.hidden = true; }, 3500);
+  }
+}
+function frcStatusPill(status){
+  if(status==='Cleared') return `<span class="pill"><span class="dot good"></span>Cleared</span>`;
+  if(status==='Not Cleared') return `<span class="pill"><span class="dot critical"></span>Not Cleared</span>`;
+  if(status==='Pending') return `<span class="pill"><span class="dot warning"></span>Pending</span>`;
+  return `<span class="pill"><span class="dot neutral"></span>—</span>`;
+}
+function ojtStatusPill(status){
+  if(status==='Cleared') return `<span class="pill"><span class="dot good"></span>Cleared</span>`;
+  if(status==='Exit') return `<span class="pill"><span class="dot critical"></span>Exit</span>`;
+  if(status==='OJT Extended') return `<span class="pill"><span class="dot warning"></span>OJT Extended</span>`;
+  return `<span class="pill"><span class="dot neutral"></span>—</span>`;
+}
+
+/* ============================= tabs ============================= */
+const tabAddBtn = document.getElementById('tabAddBtn');
+const tabReportBtn = document.getElementById('tabReportBtn');
+const viewAdd = document.getElementById('viewAdd');
+const viewReport = document.getElementById('viewReport');
+function showTab(tab){
+  const isReport = tab === 'report';
+  viewAdd.hidden = isReport;
+  viewReport.hidden = !isReport;
+  tabAddBtn.setAttribute('aria-selected', String(!isReport));
+  tabReportBtn.setAttribute('aria-selected', String(isReport));
+  history.replaceState(null, '', isReport ? '#report' : '#add');
+}
+tabAddBtn.addEventListener('click', ()=> showTab('add'));
+tabReportBtn.addEventListener('click', ()=> showTab('report'));
+
+/* ============================= server calls ============================= */
+async function api(path, opts){
+  opts = opts || {};
+  const hasBody = opts.body !== undefined;
+  const res = await fetch(path, {
+    method: opts.method || 'GET',
+    credentials: 'same-origin',
+    headers: Object.assign({'X-Requested-With':'tbt'}, hasBody ? {'Content-Type':'application/json'} : {}),
+    body: hasBody ? JSON.stringify(opts.body) : undefined,
+  });
+  let data = {};
+  try{ data = await res.json(); }catch(e){}
+  if(res.status === 401 && path !== '/api/login'){ showSignIn(data.error || 'Your session ended. Please sign in again.'); }
+  if(!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
+  return data;
+}
+
+/* ============================= sign-in ============================= */
+let session = null;
+let gisReady = false;
+const signInView = document.getElementById('signInView');
+const appView = document.getElementById('appView');
+function showSignIn(message){
+  stopPolling();
+  appView.hidden = true;
+  signInView.hidden = false;
+  document.getElementById('userBar').hidden = true;
+  const err = document.getElementById('signInError');
+  err.textContent = message || '';
+  err.hidden = !message;
+  renderGoogleButton();
+}
+function showApp(email){
+  signInView.hidden = true;
+  appView.hidden = false;
+  document.getElementById('userEmail').textContent = email;
+  document.getElementById('userBar').hidden = false;
+  loadEntries(false);
+  startPolling();
+}
+window.onGoogleLibraryLoad = function(){ gisReady = true; renderGoogleButton(); };
+function renderGoogleButton(){
+  if(!gisReady || !session || !session.googleClientId || signInView.hidden) return;
+  google.accounts.id.initialize({ client_id: session.googleClientId, callback: onGoogleCredential, hd: session.allowedDomain, ux_mode: 'popup' });
+  const holder = document.getElementById('googleButton');
+  holder.innerHTML = '';
+  google.accounts.id.renderButton(holder, { theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill' });
+}
+async function onGoogleCredential(resp){
+  const err = document.getElementById('signInError');
+  err.hidden = true;
+  try{
+    const data = await api('/api/login', { method:'POST', body:{ credential: resp.credential } });
+    showApp(data.email);
+  }catch(e){
+    err.textContent = e.message;
+    err.hidden = false;
+  }
+}
+document.getElementById('signOutBtn').addEventListener('click', async ()=>{
+  try{ await api('/api/logout', { method:'POST', body:{} }); }catch(e){}
+  if(window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect();
+  allDocs = [];
+  closeDetail();
+  showSignIn('');
+});
+
+/* ============================= entries from the server ============================= */
+let allDocs = [];
+let entriesLoaded = false;
+let loadingEntries = false;
+let pollTimer = null;
+function startPolling(){
+  stopPolling();
+  pollTimer = setInterval(()=>{
+    if(document.visibilityState === 'visible' && overlay.hidden) loadEntries(true);
+  }, 20000);
+}
+function stopPolling(){ if(pollTimer) clearInterval(pollTimer); pollTimer = null; }
+async function loadEntries(quiet){
+  if(loadingEntries) return;
+  loadingEntries = true;
+  const btn = document.getElementById('refreshBtn');
+  if(!quiet){ btn.disabled = true; btn.textContent = 'Refreshing…'; }
+  try{
+    const data = await api('/api/entries');
+    allDocs = data.entries || [];
+    entriesLoaded = true;
+    document.getElementById('dbBanner').hidden = true;
+    renderTable();
+    syncDownloadButtons();
+    if(openId && !allDocs.find(d=> d.id===openId)) closeDetail();
+  }catch(e){
+    if(!quiet || !entriesLoaded){
+      document.getElementById('dbBannerText').textContent = "Couldn't load entries: " + e.message;
+      document.getElementById('dbBanner').hidden = false;
+    }
+  }finally{
+    loadingEntries = false;
+    btn.disabled = false;
+    btn.textContent = 'Refresh';
+  }
+}
+document.getElementById('refreshBtn').addEventListener('click', ()=> loadEntries(false));
+let searchQuery = '';
+let openId = null;
+
+/* ============================= add a batch ============================= */
+const MAX_TRAINEES = 50;
+const REP_FIELDS = ['repName','repEmail','frcStatus','frc1','frc2','frc3','frc4'];
+const FRC_KEYS = ['frc1','frc2','frc3','frc4'];
+const OJT_FIELD_IDS = ['ojtStart','cp2','cp4','cp6'];
+const form = document.getElementById('entryForm');
+const submitBtn = document.getElementById('submitBtn');
+const countInput = document.getElementById('traineeCount');
+const repRows = document.getElementById('repRows');
+const ojtSection = document.getElementById('ojtSection');
+let repData = [];   // typed values per row; kept even when the count shrinks, so nothing typed is lost
+
+function blankRep(){ return {repName:'', repEmail:'', frcStatus:'', frc1:'', frc2:'', frc3:'', frc4:''}; }
+function repCount(){
+  const n = parseInt(countInput.value, 10);
+  return isNaN(n) || n < 1 ? 0 : Math.min(n, MAX_TRAINEES);
+}
+function avgOf(rep){
+  const vals = FRC_KEYS.map(k=> rep[k]).filter(v=> v!=='' && v!=null).map(Number).filter(v=> !isNaN(v));
+  if(vals.length === 0) return null;
+  return Math.round(vals.reduce((a,b)=>a+b,0) / vals.length * 100) / 100;
+}
+function renderRepRows(){
+  const n = repCount();
+  while(repData.length < n) repData.push(blankRep());
+  document.getElementById('repsEmpty').hidden = n > 0;
+  document.getElementById('repsTableWrap').hidden = n === 0;
+  const opt = (v, cur)=> `<option value="${v}"${v===cur?' selected':''}>${v || 'Select'}</option>`;
+  repRows.innerHTML = repData.slice(0, n).map((r, i)=>{
+    const a = avgOf(r);
+    const score = k => `<td class="num"><input type="number" class="in-score" id="${k}_${i}" data-i="${i}" data-k="${k}" min="0" max="10" step="0.5" placeholder="—" value="${esc(r[k])}" aria-label="Rep ${i+1} ${k.toUpperCase().replace('FRC','FRC ')}"></td>`;
+    return `<tr>
+      <td class="col-n mono">${i+1}</td>
+      <td><input type="text" class="in-name" id="repName_${i}" data-i="${i}" data-k="repName" placeholder="Full name" value="${esc(r.repName)}" required aria-label="Rep ${i+1} name"></td>
+      <td><input type="email" class="in-email" id="repEmail_${i}" data-i="${i}" data-k="repEmail" placeholder="name@example.com" value="${esc(r.repEmail)}" required aria-label="Rep ${i+1} email"></td>
+      <td><select class="in-status" id="frcStatus_${i}" data-i="${i}" data-k="frcStatus" aria-label="Rep ${i+1} FRC status">${['','Cleared','Not Cleared','Pending'].map(v=> opt(v, r.frcStatus)).join('')}</select></td>
+      ${FRC_KEYS.map(score).join('')}
+      <td class="num mono avg-cell" id="avg_${i}">${a==null ? '—' : a.toFixed(2)}</td>
+    </tr>`;
+  }).join('');
+  syncOjtSection();
+  updateSaveSummary();
+}
+function syncOjtSection(){
+  const reps = repData.slice(0, repCount());
+  ojtSection.hidden = reps.length > 0 && reps.every(r=> r.frcStatus === 'Not Cleared');
+}
+function updateSaveSummary(){
+  const n = repCount();
+  submitBtn.textContent = n > 0 ? `Save ${n} entr${n===1?'y':'ies'}` : 'Save entries';
+  const raw = parseInt(countInput.value, 10);
+  document.getElementById('saveSummary').textContent = raw > MAX_TRAINEES ? `Up to ${MAX_TRAINEES} reps can be added at once.` : '';
+}
+countInput.addEventListener('input', renderRepRows);
+function onRepInput(e){
+  const el = e.target;
+  if(!el.dataset || el.dataset.i === undefined) return;
+  const i = Number(el.dataset.i), k = el.dataset.k;
+  repData[i][k] = el.value;
+  if(FRC_KEYS.includes(k)){
+    const a = avgOf(repData[i]);
+    document.getElementById('avg_' + i).textContent = a==null ? '—' : a.toFixed(2);
+  }
+  if(k === 'frcStatus') syncOjtSection();
+}
+repRows.addEventListener('input', onRepInput);
+repRows.addEventListener('change', onRepInput);
+
+form.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  if(repCount() === 0){ countInput.focus(); countInput.reportValidity(); return; }
+  if(!form.reportValidity()) return;
+
+  const shared = {
+    joiningDate: document.getElementById('joiningDate').value || null,
+    vertical: document.getElementById('vertical').value.trim() || null,
+  };
+  OJT_FIELD_IDS.forEach(id=> shared[id] = document.getElementById(id).value || null);
+  const reps = repData.slice(0, repCount()).map(r=> ({
+    repName: r.repName.trim(), repEmail: r.repEmail.trim(), frcStatus: r.frcStatus || null,
+    frc1: r.frc1, frc2: r.frc2, frc3: r.frc3, frc4: r.frc4,
+  }));
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = `Saving ${reps.length}…`;
+  try{
+    const data = await api('/api/entries', { method:'POST', body:{ shared, reps } });
+    const n = (data.entries || []).length;
+    form.reset();
+    repData = [];
+    renderRepRows();
+    showStatus('success', `Saved ${n} entr${n===1?'y':'ies'}.`);
+    loadEntries(true);
+  }catch(err){
+    showStatus('error', `Couldn't save: ${err.message} Nothing was saved, so you can fix it and click Save again.`);
+  }finally{
+    submitBtn.disabled = false;
+    updateSaveSummary();
+  }
+});
+
+/* ============================= report list ============================= */
+let filterFrc = '';
+let filterOjt = '';
+function matchesFilters(d){
+  const r = d.data;
+  if(filterFrc && r.frcStatus !== filterFrc) return false;
+  if(filterOjt && r.ojtStatus !== filterOjt) return false;
+  return matchesSearch(d);
+}
+function matchesSearch(d){
+  if(!searchQuery) return true;
+  const r = d.data;
+  const hay = [
+    r.repName, r.vertical, r.repEmail,
+    fmtDate(r.joiningDate), r.joiningDate, monthNameOf(r.joiningDate),
+  ].filter(Boolean).join(' ').toLowerCase();
+  return hay.includes(searchQuery);
+}
+function sumCounts(r, kind){
+  const cps = ['cp2','cp4','cp6'];
+  const stats = r.checkpointStats || {};
+  let total = 0, any = false;
+  cps.forEach(cp=>{
+    const v = stats[cp] && stats[cp][kind];
+    if(v!=null && v!==''){ total += Number(v); any = true; }
+  });
+  return any ? total : null;
+}
+
+function renderTable(){
+  const tbody = document.getElementById('entryTbody');
+  const rows = allDocs.filter(matchesFilters);
+  document.getElementById('entryCount').textContent = `${rows.length} of ${allDocs.length} entr${allDocs.length===1?'y':'ies'}`;
+  document.getElementById('clearFilters').hidden = !(searchQuery || filterFrc || filterOjt);
+
+  if(allDocs.length===0){
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-note">No entries yet — add one from the "Add entry" tab.</div></td></tr>`;
+    return;
+  }
+  if(rows.length===0){
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-note">No entries match the current search and filters.</div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.map(d=>{
+    const r = d.data;
+    const reg = sumCounts(r,'registered');
+    const rec = sumCounts(r,'recovered');
+    return `<tr class="entry-row" data-id="${d.id}" tabindex="0">
+        <td class="mono">${fmtDate(r.joiningDate)}</td>
+        <td>
+          <div class="entry-name">${esc(r.repName)||'—'}</div>
+          <div class="entry-email">${esc(r.repEmail)||''}</div>
+        </td>
+        <td>${esc(r.vertical)||'—'}</td>
+        <td>${frcStatusPill(r.frcStatus)}</td>
+        <td class="mono num">${(reg==null && rec==null) ? '—' : `${reg ?? '—'}/${rec ?? '—'}`}</td>
+        <td>${ojtStatusPill(r.ojtStatus)}</td>
+      </tr>`;
+  }).join('');
+}
+
+document.getElementById('entryTbody').addEventListener('click', (e)=>{
+  const row = e.target.closest('tr.entry-row');
+  if(row) openDetail(row.dataset.id);
+});
+document.getElementById('entryTbody').addEventListener('keydown', (e)=>{
+  if(e.key!=='Enter' && e.key!==' ') return;
+  const row = e.target.closest('tr.entry-row');
+  if(row){ e.preventDefault(); openDetail(row.dataset.id); }
+});
+document.getElementById('entrySearch').addEventListener('input', (e)=>{
+  searchQuery = e.target.value.trim().toLowerCase();
+  renderTable();
+});
+document.getElementById('filterFrc').addEventListener('change', (e)=>{
+  filterFrc = e.target.value;
+  renderTable();
+});
+document.getElementById('filterOjt').addEventListener('change', (e)=>{
+  filterOjt = e.target.value;
+  renderTable();
+});
+document.getElementById('clearFilters').addEventListener('click', ()=>{
+  searchQuery = ''; filterFrc = ''; filterOjt = '';
+  document.getElementById('entrySearch').value = '';
+  document.getElementById('filterFrc').value = '';
+  document.getElementById('filterOjt').value = '';
+  renderTable();
+});
+
+/* ============================= detail modal ============================= */
+const CHECKPOINTS = [
+  {key:'cp2', label:'2nd week checkpoint'},
+  {key:'cp4', label:'4th week checkpoint'},
+  {key:'cp6', label:'6th week checkpoint'},
+];
+const overlay = document.getElementById('detailOverlay');
+
+function openDetail(id){
+  const doc = allDocs.find(d=> d.id===id);
+  if(!doc) return;
+  openId = id;
+  const r = doc.data;
+
+  document.getElementById('modalName').textContent = r.repName || 'Unnamed rep';
+  document.getElementById('modalEmail').textContent = r.repEmail || '';
+  document.getElementById('modalBadges').innerHTML = `${frcStatusPill(r.frcStatus)}${r.vertical ? `<span class="pill"><span class="dot neutral"></span>${esc(r.vertical)}</span>` : ''}`;
+
+  const noOjt = r.frcStatus === 'Not Cleared';
+  document.getElementById('modalOjtArea').hidden = noOjt;
+  document.getElementById('modalNoOjtNote').hidden = !noOjt;
+  document.getElementById('modalSaveBtn').hidden = noOjt;
+
+  document.getElementById('modalSummary').innerHTML = `
+    <div><div class="detail-item-label">Joining date</div><div class="detail-item-value mono">${fmtDate(r.joiningDate)}</div></div>
+    ${noOjt ? '' : `<div><div class="detail-item-label">OJT start date</div><div class="detail-item-value mono">${fmtDate(r.ojtStart)}</div></div>`}
+    <div><div class="detail-item-label">Avg score</div><div class="detail-item-value mono">${r.avgScore!=null ? r.avgScore.toFixed(2) : '—'}</div></div>
+    <div><div class="detail-item-label">FRC 1</div><div class="detail-item-value mono">${r.frc1 ?? '—'}</div></div>
+    <div><div class="detail-item-label">FRC 2</div><div class="detail-item-value mono">${r.frc2 ?? '—'}</div></div>
+    <div><div class="detail-item-label">FRC 3</div><div class="detail-item-value mono">${r.frc3 ?? '—'}</div></div>
+    <div><div class="detail-item-label">FRC 4</div><div class="detail-item-value mono">${r.frc4 ?? '—'}</div></div>
+  `;
+
+  document.getElementById('modalOjtStatus').value = r.ojtStatus || '';
+
+  const stats = r.checkpointStats || {};
+  document.getElementById('modalCheckpoints').innerHTML = CHECKPOINTS.map(cp=>{
+    const cpStat = stats[cp.key] || {};
+    return `<div class="checkpoint-block">
+        <div class="checkpoint-block-head">
+          <div class="checkpoint-block-title">${cp.label}</div>
+          <div class="checkpoint-block-date mono">${fmtDate(r[cp.key])}</div>
+        </div>
+        <div class="checkpoint-inputs">
+          <div class="field">
+            <label>Registered</label>
+            <input type="number" min="0" step="1" data-cp="${cp.key}" data-kind="registered" value="${cpStat.registered ?? ''}">
+          </div>
+          <div class="field">
+            <label>Recovered</label>
+            <input type="number" min="0" step="1" data-cp="${cp.key}" data-kind="recovered" value="${cpStat.recovered ?? ''}">
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  document.getElementById('modalSaveStatus').textContent = '';
+  document.getElementById('modalDeleteBtn').textContent = 'Delete entry';
+  document.getElementById('modalDeleteBtn').dataset.confirming = '';
+  overlay.hidden = false;
+}
+function closeDetail(){
+  overlay.hidden = true;
+  openId = null;
+}
+document.getElementById('modalClose').addEventListener('click', closeDetail);
+overlay.addEventListener('click', (e)=>{ if(e.target === overlay) closeDetail(); });
+document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !overlay.hidden) closeDetail(); });
+
+document.getElementById('modalSaveBtn').addEventListener('click', async ()=>{
+  if(!openId) return;
+  const inputs = document.querySelectorAll('#modalCheckpoints input');
+  const checkpointStats = {};
+  inputs.forEach(inp=>{
+    const cp = inp.dataset.cp, kind = inp.dataset.kind;
+    checkpointStats[cp] = checkpointStats[cp] || {};
+    checkpointStats[cp][kind] = inp.value === '' ? null : Number(inp.value);
+  });
+  const ojtStatus = document.getElementById('modalOjtStatus').value || null;
+  const statusEl = document.getElementById('modalSaveStatus');
+  statusEl.textContent = 'Saving…';
+  try{
+    const data = await api('/api/entries?id=' + encodeURIComponent(openId), { method:'PATCH', body:{ checkpointStats, ojtStatus } });
+    const i = allDocs.findIndex(d=> d.id === data.entry.id);
+    if(i >= 0) allDocs[i] = data.entry;
+    renderTable();
+    statusEl.textContent = 'Saved.';
+  }catch(err){
+    statusEl.textContent = "Couldn't save: " + err.message;
+  }
+});
+
+document.getElementById('modalDeleteBtn').addEventListener('click', async function(){
+  if(!openId) return;
+  if(this.dataset.confirming !== '1'){
+    this.dataset.confirming = '1';
+    this.textContent = 'Confirm delete?';
+    return;
+  }
+  const id = openId;
+  try{
+    await api('/api/entries?id=' + encodeURIComponent(id), { method:'DELETE' });
+    allDocs = allDocs.filter(d=> d.id !== id);
+    renderTable();
+    syncDownloadButtons();
+    closeDetail();
+    showStatus('success', 'Entry deleted.');
+  }catch(err){
+    showStatus('error', "Couldn't delete that entry: " + err.message);
+  }
+});
+
+/* ============================= export (CSV) ============================= */
+function cpStat(r, cp, kind){ const s = r.checkpointStats && r.checkpointStats[cp]; return s ? s[kind] : null; }
+function regRecText(r){
+  const reg = sumCounts(r,'registered'), rec = sumCounts(r,'recovered');
+  return (reg==null && rec==null) ? '' : `${reg ?? '—'}/${rec ?? '—'}`;
+}
+const EXPORT_COLS = [
+  {h:'Joining date',            type:'date', get:r=> r.joiningDate},
+  {h:'Rep name',                type:'text', get:r=> r.repName},
+  {h:'Email',                   type:'text', get:r=> r.repEmail},
+  {h:'Vertical',                type:'text', get:r=> r.vertical},
+  {h:'FRC status',              type:'text', get:r=> r.frcStatus},
+  {h:'FRC 1',                   type:'num', get:r=> r.frc1},
+  {h:'FRC 2',                   type:'num', get:r=> r.frc2},
+  {h:'FRC 3',                   type:'num', get:r=> r.frc3},
+  {h:'FRC 4',                   type:'num', get:r=> r.frc4},
+  {h:'Avg score',               type:'num', get:r=> r.avgScore},
+  {h:'OJT start date',          type:'date', get:r=> r.ojtStart},
+  {h:'2nd week checkpoint',     type:'date', get:r=> r.cp2},
+  {h:'2nd week registered',     type:'num', get:r=> cpStat(r,'cp2','registered')},
+  {h:'2nd week recovered',      type:'num', get:r=> cpStat(r,'cp2','recovered')},
+  {h:'4th week checkpoint',     type:'date', get:r=> r.cp4},
+  {h:'4th week registered',     type:'num', get:r=> cpStat(r,'cp4','registered')},
+  {h:'4th week recovered',      type:'num', get:r=> cpStat(r,'cp4','recovered')},
+  {h:'6th week checkpoint',     type:'date', get:r=> r.cp6},
+  {h:'6th week registered',     type:'num', get:r=> cpStat(r,'cp6','registered')},
+  {h:'6th week recovered',      type:'num', get:r=> cpStat(r,'cp6','recovered')},
+  {h:'Registered/Recovered',    type:'text', get:r=> regRecText(r)},
+  {h:'Final status after OJT',  type:'text', get:r=> r.ojtStatus},
+];
+function exportValue(col, r){
+  const v = col.get(r);
+  if(v==null || v==='') return null;
+  if(col.type==='num'){ const n = Number(v); return isNaN(n) ? null : n; }
+  if(col.type==='date') return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+  return String(v);
+}
+
+function buildCsv(){
+  const cell = (v, type)=>{
+    if(v==null) return '';
+    let s = String(v);
+    if(type==='text' && /^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+  };
+  const lines = [EXPORT_COLS.map(c=> cell(c.h,'text')).join(',')];
+  allDocs.forEach(d=> lines.push(EXPORT_COLS.map(c=> cell(exportValue(c, d.data), c.type)).join(',')));
+  return '﻿' + lines.join('\r\n') + '\r\n';
+}
+
+function doDownload(){
+  const stamp = new Date().toISOString().slice(0,10);
+  const url = URL.createObjectURL(new Blob([buildCsv()], { type:'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `training-batch-entries-${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=> URL.revokeObjectURL(url), 1000);
+}
+document.getElementById('dlCsv').addEventListener('click', doDownload);
+function syncDownloadButtons(){
+  document.getElementById('dlCsv').disabled = allDocs.length === 0;
+}
+
+/* ============================= start ============================= */
+async function init(){
+  renderRepRows();
+  showTab(location.hash === '#report' ? 'report' : 'add');
+  try{
+    session = await api('/api/session');
+  }catch(e){
+    session = null;
+    showSignIn("Couldn't reach the server. Check your connection and reload the page.");
+    return;
+  }
+  document.getElementById('signInCaption').textContent = `Use your Accredian Google account (@${session.allowedDomain}).`;
+  if(session.email) showApp(session.email);
+  else showSignIn(session.googleClientId ? '' : "Sign-in isn't set up yet: add GOOGLE_CLIENT_ID in Vercel's environment variables and redeploy.");
+}
+init();
+</script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</body>
+</html>
