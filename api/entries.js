@@ -1,6 +1,6 @@
 import {
   handle, send, readJson, requireMethod, HttpError,
-  ensureSchema, listEntries, insertBatch, updateProgress, deleteEntry,
+  listEntries, insertBatch, updateProgress, deleteEntry,
 } from './_lib.js';
 
 // GET    /api/entries          -> all entries, newest first
@@ -9,7 +9,6 @@ import {
 // DELETE /api/entries?id=...   -> delete one entry
 export default handle(async (req, res) => {
   requireMethod(req, res, ['GET', 'POST', 'PATCH', 'DELETE']);
-  await ensureSchema();
   const id = new URL(req.url, 'http://localhost').searchParams.get('id');
 
   if (req.method === 'GET') return send(res, 200, { entries: await listEntries() });

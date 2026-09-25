@@ -12,35 +12,58 @@ should have that access.
 - `index.html` — the whole page (form, report, detail view, CSV download).
 - `api/entries.js` — Vercel serverless function: list, add a batch, update
   checkpoint counts, delete.
-- `api/_lib.js` — shared server code (database and validation).
-- Data lives in a Postgres database (Neon, added through Vercel). The table is
-  created automatically the first time the app is used, with the two entries
-  carried over from the earlier Claude version.
+- `api/_lib.js` — shared server code (Supabase access and validation).
+- Data lives in **Supabase**, in the table `public.training_entries`
+  (project *Batch Handover Database*). One row per rep.
+  Row Level Security is on with no public policies, so the table can only be read
+  or changed through this app's server, which uses the project's secret key.
 
-## Setup (one time, about 5 minutes)
+## Setup
 
-### 1. Import the repository into Vercel
-1. In Vercel, click **Add New → Project** and import `training_tracker`.
-2. Leave **Framework Preset** as **Other** and every build setting at its default.
-3. Click **Deploy**.
+### 1. Supabase (already done)
+The `training_entries` table has been created in the *Batch Handover Database*
+project, with the two entries carried over from the earlier Claude version.
+You can see it under **Table Editor → training_entries**.
 
-### 2. Add the database
-1. In the Vercel project, open **Storage → Create Database → Neon (Postgres)**.
-2. Create it (the free size is plenty) and **connect it to this project**.
-   This adds a `DATABASE_URL` environment variable automatically.
-3. Go to **Deployments**, open the latest one, and choose **⋯ → Redeploy**
-   so the app picks up the database.
+### 2. Vercel environment variables
+In the Vercel project, open **Settings → Environment Variables** and add
+(for *Production*, and *Preview* if you use it):
 
-That's it. Open your Vercel address and start adding entries.
+| Name | Value |
+| --- | --- |
+| `SUPABASE_URL` | `https://tzetzngxwzotwpfddgmc.supabase.co` |
+| `SUPABASE_SECRET_KEY` | your project's secret key — see below |
+
+**Where to find the secret key:** Supabase dashboard → *Batch Handover Database* →
+**Project Settings → API Keys**. Copy a **Secret key** (starts with `sb_secret_`).
+If you only see legacy keys, copy the **service_role** key instead.
+Keep this key private: never put it in `index.html` or share it.
+
+Then go to **Deployments**, open the latest one, and choose **⋯ → Redeploy**.
+
+### 3. Clean up (optional)
+The app no longer uses Neon. If you added a Neon database in Vercel, you can
+disconnect it under **Storage**; the `DATABASE_URL` variable is no longer needed.
 
 ## Updating the app
 Push changes to the `main` branch on GitHub and Vercel redeploys automatically.
 
+## Table columns (`public.training_entries`)
+
+| Column | Meaning |
+| --- | --- |
+| `id`, `created_at`, `updated_at` | set automatically |
+| `joining_date`, `vertical`, `ojt_start` | shared batch details |
+| `rep_name`, `rep_email` | required for every rep |
+| `frc_status` | Cleared / Not Cleared / Pending |
+| `frc1`–`frc4`, `avg_score` | 0–10 |
+| `cp2_date`, `cp4_date`, `cp6_date` | checkpoint dates |
+| `cp2_registered` … `cp6_recovered` | counts entered in the report's detail view |
+| `ojt_status` | Final status after OJT: Cleared / Exit / OJT Extended |
+
 ## Notes
 
 - **Everyone with the link shares the same entries** and can add, edit and delete them.
-  If something is deleted by mistake, Neon can restore the database to an earlier
-  point in time within its history window (short on the free plan). Downloading the
-  CSV now and then is an easy extra backup.
+  Downloading the CSV now and then is an easy backup.
 - **Vercel plan:** Vercel's free Hobby plan is for personal, non-commercial use.
   A company tool like this falls under their Pro plan.

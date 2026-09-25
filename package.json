@@ -1,8 +1,5 @@
 {
   "name": "training-batch-tracker",
   "private": true,
-  "type": "module",
-  "dependencies": {
-    "@neondatabase/serverless": "^1.0.0"
-  }
+  "type": "module"
 }

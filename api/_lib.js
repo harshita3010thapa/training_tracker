@@ -1,8 +1,5 @@
 // Shared server code for the Training Batch Tracker.
 // Files in /api that start with "_" are not deployed as endpoints.
-import crypto from 'node:crypto';
-import { neon } from '@neondatabase/serverless';
-
 const MAX_REPS_PER_BATCH = 50;
 const FRC_STATUSES = ['Cleared', 'Not Cleared', 'Pending'];
 const OJT_STATUSES = ['Cleared', 'Exit', 'OJT Extended'];
@@ -58,64 +55,83 @@ export function requireMethod(req, res, methods) {
   }
 }
 
-/* ============================= database ============================= */
+/* ============================= database (Supabase) ============================= */
 
-let sqlFn = null;
-let schemaReady = false;
-
-function sql() {
-  if (!sqlFn) {
-    const url = process.env.DATABASE_URL || process.env.POSTGRES_URL;
-    if (!url) throw new HttpError(500, 'No database is connected. In Vercel, add a Neon Postgres database under Storage, then redeploy.');
-    sqlFn = neon(url);
-  }
-  return sqlFn;
-}
+// Rows live in the Supabase table public.training_entries, reached through Supabase's REST API.
+// The table has Row Level Security on with no public policies, so only this server
+// (using the project's secret key) can read or write it.
+const TABLE = 'training_entries';
+const PAGE_SIZE = 1000;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+let fetchImpl = (...args) => fetch(...args);
 
 // Used only by the local test harness.
-export function __setSqlForTest(fn) { sqlFn = fn; schemaReady = false; }
+export function __setFetchForTest(fn) { fetchImpl = fn; }
 
-// Entries carried over from the Claude version of the tracker.
-// Added once, only when the table is first created.
-const SEED_ENTRIES = [
-  { id: 'ntm2x6nbfpj3600ikz3e', createdAt: '2026-09-23T07:15:48.330Z', data: {
-    repName: 'Harshita Handa', repEmail: 'Harshita.handa@accredian.com', joiningDate: '2026-08-17',
-    vertical: 'IIM Lucknow Chief Human Resources Officer Programme (The CHRO Program)', frcStatus: 'Cleared',
-    frc1: 5, frc2: 4.5, frc3: 6, frc4: null, avgScore: 5.17,
-    ojtStart: '2026-09-01', cp2: '2026-09-15', cp4: '2026-09-29', cp6: '2026-10-13',
-    checkpointStats: { cp2: { registered: 1, recovered: 1 }, cp4: { registered: null, recovered: null }, cp6: { registered: null, recovered: null } },
-    ojtStatus: 'Cleared', createdAt: '2026-09-23T07:15:48.330Z', updatedAt: '2026-09-23T09:39:07.823Z' } },
-  { id: 'zs675j2byjvuzg0muu05', createdAt: '2026-09-23T08:11:06.354Z', data: {
-    repName: 'Anand Giri', repEmail: 'Anand.giri@accredian.com', joiningDate: '2026-08-17',
-    vertical: 'IIM Lucknow Chief Human Resources Officer Programme (The CHRO Program)', frcStatus: 'Cleared',
-    frc1: 5.5, frc2: 6, frc3: 6.5, frc4: null, avgScore: 6,
-    ojtStart: '2026-09-01', cp2: '2026-09-15', cp4: '2026-09-29', cp6: '2026-10-13',
-    checkpointStats: { cp2: { registered: 2, recovered: 2 }, cp4: { registered: 4, recovered: null }, cp6: { registered: 1, recovered: null } },
-    ojtStatus: 'Cleared', createdAt: '2026-09-23T08:11:06.354Z', updatedAt: '2026-09-23T10:58:44.512Z' } },
-];
-
-export async function ensureSchema() {
-  if (schemaReady) return;
-  const db = sql();
-  const existing = await db`SELECT to_regclass('public.entries') IS NOT NULL AS ok`;
-  await db`CREATE TABLE IF NOT EXISTS entries (
-    id text PRIMARY KEY,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    data jsonb NOT NULL
-  )`;
-  if (!existing[0] || !existing[0].ok) {
-    await db`INSERT INTO entries (id, created_at, data)
-      SELECT e->>'id', (e->>'createdAt')::timestamptz, e->'data'
-      FROM jsonb_array_elements(${JSON.stringify(SEED_ENTRIES)}::jsonb) AS e
-      ON CONFLICT (id) DO NOTHING`;
+function supabaseConfig() {
+  const url = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim().replace(/\/+$/, '');
+  const key = (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  if (!url || !key) {
+    throw new HttpError(500, 'Supabase is not connected. In Vercel, add SUPABASE_URL and SUPABASE_SECRET_KEY, then redeploy.');
   }
-  schemaReady = true;
+  return { url, key };
+}
+
+async function rest(method, query, body, prefer) {
+  const { url, key } = supabaseConfig();
+  // New keys (sb_secret_...) go in the apikey header only; legacy JWT keys also go in Authorization.
+  const headers = { apikey: key, Accept: 'application/json' };
+  if (key.startsWith('eyJ')) headers.Authorization = 'Bearer ' + key;
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (prefer) headers.Prefer = prefer;
+  const res = await fetchImpl(`${url}/rest/v1/${TABLE}${query ? '?' + query : ''}`, {
+    method, headers, body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = null; }
+  if (!res.ok) {
+    console.error('Supabase error', res.status, text);
+    if (res.status === 401 || res.status === 403) {
+      throw new HttpError(500, 'Supabase rejected the key. Check SUPABASE_SECRET_KEY in Vercel (use the secret or service_role key).');
+    }
+    if (data && (data.code === '42P01' || data.code === 'PGRST205')) {
+      throw new HttpError(500, `The ${TABLE} table was not found in Supabase.`);
+    }
+    throw new HttpError(502, 'The database refused the change: ' + ((data && (data.message || data.hint)) || `error ${res.status}`));
+  }
+  return data;
+}
+
+const num = (v) => (v === null || v === undefined ? null : Number(v));
+
+function rowToEntry(r) {
+  return {
+    id: r.id,
+    data: {
+      joiningDate: r.joining_date, repName: r.rep_name, repEmail: r.rep_email, vertical: r.vertical,
+      frcStatus: r.frc_status,
+      frc1: num(r.frc1), frc2: num(r.frc2), frc3: num(r.frc3), frc4: num(r.frc4), avgScore: num(r.avg_score),
+      ojtStart: r.ojt_start, cp2: r.cp2_date, cp4: r.cp4_date, cp6: r.cp6_date,
+      checkpointStats: {
+        cp2: { registered: r.cp2_registered, recovered: r.cp2_recovered },
+        cp4: { registered: r.cp4_registered, recovered: r.cp4_recovered },
+        cp6: { registered: r.cp6_registered, recovered: r.cp6_recovered },
+      },
+      ojtStatus: r.ojt_status,
+      createdAt: r.created_at, updatedAt: r.updated_at,
+    },
+  };
 }
 
 export async function listEntries() {
-  const rows = await sql()`SELECT id, data FROM entries ORDER BY created_at DESC, id DESC LIMIT 5000`;
-  return rows.map((r) => ({ id: r.id, data: typeof r.data === 'string' ? JSON.parse(r.data) : r.data }));
+  const rows = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const page = await rest('GET', `select=*&order=created_at.desc,id.desc&limit=${PAGE_SIZE}&offset=${offset}`);
+    rows.push(...(page || []));
+    if (!page || page.length < PAGE_SIZE) break;
+  }
+  return rows.map(rowToEntry);
 }
 
 export async function insertBatch(body) {
@@ -152,29 +168,25 @@ export async function insertBatch(body) {
     // Later reps in a batch get a later timestamp, so the newest-first report shows the last row on top.
     const createdAt = new Date(start + i).toISOString();
     return {
-      id: crypto.randomUUID(),
-      createdAt,
-      data: {
-        joiningDate: base.joiningDate, repName, repEmail, vertical: base.vertical,
-        frcStatus, ...scores, avgScore,
-        ojtStart: notCleared ? null : base.ojtStart,
-        cp2: notCleared ? null : base.cp2,
-        cp4: notCleared ? null : base.cp4,
-        cp6: notCleared ? null : base.cp6,
-        createdAt, updatedAt: createdAt,
-      },
+      created_at: createdAt, updated_at: createdAt,
+      joining_date: base.joiningDate, rep_name: repName, rep_email: repEmail, vertical: base.vertical,
+      frc_status: frcStatus, frc1: scores.frc1, frc2: scores.frc2, frc3: scores.frc3, frc4: scores.frc4, avg_score: avgScore,
+      ojt_start: notCleared ? null : base.ojtStart,
+      cp2_date: notCleared ? null : base.cp2,
+      cp4_date: notCleared ? null : base.cp4,
+      cp6_date: notCleared ? null : base.cp6,
     };
   });
 
-  await sql()`INSERT INTO entries (id, created_at, data)
-    SELECT e->>'id', (e->>'createdAt')::timestamptz, e->'data'
-    FROM jsonb_array_elements(${JSON.stringify(rows)}::jsonb) AS e`;
-  return rows.map((r) => ({ id: r.id, data: r.data }));
+  // One request = one transaction: either every rep is saved or none are.
+  const inserted = await rest('POST', 'select=*', rows, 'return=representation');
+  return (inserted || []).map(rowToEntry);
 }
 
 export async function updateProgress(id, body) {
+  if (!UUID_RE.test(String(id))) throw new HttpError(404, 'That entry no longer exists. It may have been deleted.');
   const input = (body && body.checkpointStats) || {};
-  const checkpointStats = {};
+  const patch = {};
   CHECKPOINTS.forEach((cp) => {
     const c = input[cp] || {};
     const registered = cleanCount(c.registered);
@@ -182,23 +194,22 @@ export async function updateProgress(id, body) {
     if (registered === undefined || recovered === undefined) {
       throw new HttpError(400, 'Registered and Recovered must be whole numbers of 0 or more.');
     }
-    checkpointStats[cp] = { registered, recovered };
+    patch[`${cp}_registered`] = registered;
+    patch[`${cp}_recovered`] = recovered;
   });
-  const ojtStatus = OJT_STATUSES.includes(body && body.ojtStatus) ? body.ojtStatus : null;
-  const patch = { checkpointStats, ojtStatus, updatedAt: new Date().toISOString() };
+  patch.ojt_status = OJT_STATUSES.includes(body && body.ojtStatus) ? body.ojtStatus : null;
 
-  const rows = await sql()`UPDATE entries
-    SET data = data || ${JSON.stringify(patch)}::jsonb, updated_at = now()
-    WHERE id = ${id} AND coalesce(data->>'frcStatus', '') <> 'Not Cleared'
-    RETURNING id, data`;
-  if (rows.length) return { id: rows[0].id, data: typeof rows[0].data === 'string' ? JSON.parse(rows[0].data) : rows[0].data };
-  const exists = await sql()`SELECT 1 AS one FROM entries WHERE id = ${id}`;
-  if (!exists.length) throw new HttpError(404, 'That entry no longer exists. It may have been deleted.');
+  const filter = `id=eq.${id}&or=${encodeURIComponent('(frc_status.is.null,frc_status.neq."Not Cleared")')}`;
+  const rows = await rest('PATCH', `${filter}&select=*`, patch, 'return=representation');
+  if (rows && rows.length) return rowToEntry(rows[0]);
+  const exists = await rest('GET', `id=eq.${id}&select=id`);
+  if (!exists || !exists.length) throw new HttpError(404, 'That entry no longer exists. It may have been deleted.');
   throw new HttpError(409, "FRC isn't cleared for this rep, so there's no OJT data to save.");
 }
 
 export async function deleteEntry(id) {
-  await sql()`DELETE FROM entries WHERE id = ${id}`;
+  if (!UUID_RE.test(String(id))) return;
+  await rest('DELETE', `id=eq.${id}`);
 }
 
 /* ============================= validation ============================= */
