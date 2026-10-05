@@ -60,6 +60,7 @@ Push changes to the `main` branch on GitHub and Vercel redeploys automatically.
 | `cp2_date`, `cp4_date`, `cp6_date` | checkpoint dates |
 | `cp2_registered` … `cp6_recovered` | counts entered in the report's detail view |
 | `ojt_status` | Final status after OJT: Cleared / Exit / OJT Extended |
+| `exit_date` | date the rep exited (only when Final status is Exit) |
 
 ## Notes
 

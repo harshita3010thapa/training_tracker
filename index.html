@@ -52,7 +52,7 @@
   :focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:4px;}
   .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace; font-variant-numeric:tabular-nums;}
 
-  .shell{max-width:880px; margin:0 auto; padding-block:28px 56px;}
+  .shell{max-width:1000px; margin:0 auto; padding-block:28px 56px;}
   header.top{margin-bottom:18px;}
   .brand-mark{display:flex; align-items:center; gap:12px; margin-bottom:4px;}
   h1{font-size:21px; font-weight:600; margin:0; letter-spacing:-0.01em;}
@@ -138,7 +138,7 @@
   .download-group .btn:disabled{opacity:.5; cursor:default;}
 
   .table-scroll{overflow-x:auto; border-radius:var(--radius-sm);}
-  table{border-collapse:collapse; width:100%; font-size:12.8px; min-width:640px;}
+  table{border-collapse:collapse; width:100%; font-size:12.8px; min-width:760px;}
   thead th{
     position:sticky; top:0; background:var(--surface); text-align:left;
     font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--muted);
@@ -190,6 +190,9 @@
   .checkpoint-block-head{display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:10px;}
   .checkpoint-block-title{font-size:12.5px; font-weight:600;}
   .checkpoint-block-date{font-size:11.5px; color:var(--muted);}
+  td.vertical-cell{min-width:170px;}
+  .status-row{display:flex; flex-wrap:wrap; gap:12px; margin-bottom:14px;}
+  .status-row .field{flex:0 1 220px; min-width:0;}
   .checkpoint-inputs{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
   .checkpoint-inputs .field label{font-size:11px;}
   .checkpoint-inputs .field input{height:34px; padding:6px 10px;}
@@ -366,9 +369,10 @@
               <th>FRC status</th>
               <th class="num">Registered/Recovered</th>
               <th>OJT status</th>
+              <th>Exit date</th>
             </tr>
           </thead>
-          <tbody id="entryTbody"><tr><td colspan="6"><div class="empty-note">Loading entries…</div></td></tr></tbody>
+          <tbody id="entryTbody"><tr><td colspan="7"><div class="empty-note">Loading entries…</div></td></tr></tbody>
         </table>
       </div>
     </div>
@@ -389,14 +393,20 @@
     <div class="modal-note" id="modalNoOjtNote" hidden>FRC not cleared — this rep doesn't move on to OJT, so there's no checkpoint data to log.</div>
     <div id="modalOjtArea">
     <div class="checkpoint-section-title">Checkpoints — Registered &amp; Recovered</div>
-    <div class="field" id="ojtStatusField" style="max-width:240px; margin-bottom:14px;">
-      <label for="modalOjtStatus">Final status after OJT</label>
-      <select id="modalOjtStatus">
-        <option value="">Select status</option>
-        <option value="Cleared">Cleared</option>
-        <option value="Exit">Exit</option>
-        <option value="OJT Extended">OJT Extended</option>
-      </select>
+    <div class="status-row">
+      <div class="field" id="ojtStatusField">
+        <label for="modalOjtStatus">Final status after OJT</label>
+        <select id="modalOjtStatus">
+          <option value="">Select status</option>
+          <option value="Cleared">Cleared</option>
+          <option value="Exit">Exit</option>
+          <option value="OJT Extended">OJT Extended</option>
+        </select>
+      </div>
+      <div class="field" id="exitDateField" hidden>
+        <label for="modalExitDate">Exit date</label>
+        <input type="date" id="modalExitDate">
+      </div>
     </div>
     <div class="checkpoint-blocks" id="modalCheckpoints"></div>
     </div>
@@ -551,7 +561,7 @@ function renderRepRows(){
   const opt = (v, cur)=> `<option value="${v}"${v===cur?' selected':''}>${v || 'Select'}</option>`;
   repRows.innerHTML = repData.slice(0, n).map((r, i)=>{
     const a = avgOf(r);
-    const score = k => `<td class="num"><input type="number" class="in-score" id="${k}_${i}" data-i="${i}" data-k="${k}" min="0" max="10" step="0.5" placeholder="—" value="${esc(r[k])}" aria-label="Rep ${i+1} ${k.toUpperCase().replace('FRC','FRC ')}"></td>`;
+    const score = k => `<td class="num"><input type="number" class="in-score" id="${k}_${i}" data-i="${i}" data-k="${k}" min="0" max="10" step="any" placeholder="—" value="${esc(r[k])}" aria-label="Rep ${i+1} ${k.toUpperCase().replace('FRC','FRC ')}"></td>`;
     return `<tr>
       <td class="col-n mono">${i+1}</td>
       <td><input type="text" class="in-name" id="repName_${i}" data-i="${i}" data-k="repName" placeholder="Full name" value="${esc(r.repName)}" required aria-label="Rep ${i+1} name"></td>
@@ -658,11 +668,11 @@ function renderTable(){
   document.getElementById('clearFilters').hidden = !(searchQuery || filterFrc || filterOjt);
 
   if(allDocs.length===0){
-    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-note">No entries yet — add one from the "Add entry" tab.</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-note">No entries yet — add one from the "Add entry" tab.</div></td></tr>`;
     return;
   }
   if(rows.length===0){
-    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-note">No entries match the current search and filters.</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-note">No entries match the current search and filters.</div></td></tr>`;
     return;
   }
 
@@ -676,10 +686,11 @@ function renderTable(){
           <div class="entry-name">${esc(r.repName)||'—'}</div>
           <div class="entry-email">${esc(r.repEmail)||''}</div>
         </td>
-        <td>${esc(r.vertical)||'—'}</td>
+        <td class="vertical-cell">${esc(r.vertical)||'—'}</td>
         <td>${frcStatusPill(r.frcStatus)}</td>
         <td class="mono num">${(reg==null && rec==null) ? '—' : `${reg ?? '—'}/${rec ?? '—'}`}</td>
         <td>${ojtStatusPill(r.ojtStatus)}</td>
+        <td class="mono">${r.ojtStatus==='Exit' ? fmtDate(r.exitDate) : '—'}</td>
       </tr>`;
   }).join('');
 }
@@ -747,6 +758,8 @@ function openDetail(id){
   `;
 
   document.getElementById('modalOjtStatus').value = r.ojtStatus || '';
+  document.getElementById('modalExitDate').value = r.exitDate || '';
+  syncExitDateField();
 
   const stats = r.checkpointStats || {};
   document.getElementById('modalCheckpoints').innerHTML = CHECKPOINTS.map(cp=>{
@@ -774,6 +787,18 @@ function openDetail(id){
   document.getElementById('modalDeleteBtn').dataset.confirming = '';
   overlay.hidden = false;
 }
+function todayIso(){
+  const t = new Date(), pad = n=> String(n).padStart(2,'0');
+  return `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`;
+}
+// The Exit date box shows only when the final status is Exit; it starts on today's date.
+function syncExitDateField(){
+  const isExit = document.getElementById('modalOjtStatus').value === 'Exit';
+  const input = document.getElementById('modalExitDate');
+  document.getElementById('exitDateField').hidden = !isExit;
+  if(isExit && !input.value) input.value = todayIso();
+}
+document.getElementById('modalOjtStatus').addEventListener('change', syncExitDateField);
 function closeDetail(){
   overlay.hidden = true;
   openId = null;
@@ -792,10 +817,11 @@ document.getElementById('modalSaveBtn').addEventListener('click', async ()=>{
     checkpointStats[cp][kind] = inp.value === '' ? null : Number(inp.value);
   });
   const ojtStatus = document.getElementById('modalOjtStatus').value || null;
+  const exitDate = ojtStatus === 'Exit' ? (document.getElementById('modalExitDate').value || null) : null;
   const statusEl = document.getElementById('modalSaveStatus');
   statusEl.textContent = 'Saving…';
   try{
-    const data = await api('/api/entries?id=' + encodeURIComponent(openId), { method:'PATCH', body:{ checkpointStats, ojtStatus } });
+    const data = await api('/api/entries?id=' + encodeURIComponent(openId), { method:'PATCH', body:{ checkpointStats, ojtStatus, exitDate } });
     const i = allDocs.findIndex(d=> d.id === data.entry.id);
     if(i >= 0) allDocs[i] = data.entry;
     renderTable();
@@ -854,6 +880,7 @@ const EXPORT_COLS = [
   {h:'6th week recovered',      type:'num', get:r=> cpStat(r,'cp6','recovered')},
   {h:'Registered/Recovered',    type:'text', get:r=> regRecText(r)},
   {h:'Final status after OJT',  type:'text', get:r=> r.ojtStatus},
+  {h:'Exit date',               type:'date', get:r=> r.ojtStatus==='Exit' ? r.exitDate : null},
 ];
 function exportValue(col, r){
   const v = col.get(r);
