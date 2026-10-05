@@ -118,7 +118,7 @@ function rowToEntry(r) {
         cp4: { registered: r.cp4_registered, recovered: r.cp4_recovered },
         cp6: { registered: r.cp6_registered, recovered: r.cp6_recovered },
       },
-      ojtStatus: r.ojt_status,
+      ojtStatus: r.ojt_status, exitDate: r.exit_date,
       createdAt: r.created_at, updatedAt: r.updated_at,
     },
   };
@@ -198,6 +198,7 @@ export async function updateProgress(id, body) {
     patch[`${cp}_recovered`] = recovered;
   });
   patch.ojt_status = OJT_STATUSES.includes(body && body.ojtStatus) ? body.ojtStatus : null;
+  patch.exit_date = patch.ojt_status === 'Exit' ? cleanDate(body.exitDate) : null;
 
   const filter = `id=eq.${id}&or=${encodeURIComponent('(frc_status.is.null,frc_status.neq."Not Cleared")')}`;
   const rows = await rest('PATCH', `${filter}&select=*`, patch, 'return=representation');
